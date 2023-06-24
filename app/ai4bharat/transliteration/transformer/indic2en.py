@@ -67,10 +67,11 @@ class XlitEngineTransformer_Indic2En(BaseEngineTransformer):
     def tgt_langs(self):
         return self._tgt_langs
     
-    def translit_word(self, word, lang_code, topk=4):
+    def translit_word(self, word, lang_code, topk=4, id=None):
         if lang_code not in self.all_supported_langs:
             raise NotImplementedError(f"Language: `{lang_code}` not yet supported")
-        return self._transliterate_word(word, src_lang=lang_code, tgt_lang='en', topk=topk)
+        out = self._transliterate_word(word, src_lang=lang_code, tgt_lang='en', topk=topk, id=id)
+        return out
     
     def translit_sentence(self, indic_sentence, lang_code):
         if lang_code not in self.all_supported_langs:

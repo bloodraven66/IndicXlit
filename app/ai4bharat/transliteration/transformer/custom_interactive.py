@@ -251,6 +251,8 @@ class Transliterator:
             translations = self.task.inference_step(
                 self.generator, self.models, sample, constraints=constraints
             )
+            translations = [[translations[0][0]]]
+            attn = translations[0][0]["attention"]
             translate_time = time.time() - translate_start_time
             self.total_translate_time += translate_time
             list_constraints = [[] for _ in range(bsz)]
@@ -279,26 +281,9 @@ class Transliterator:
             if self.src_dict is not None:
                 src_str = self.src_dict.string(src_tokens, self.cfg.common_eval.post_process)
 
-                
-                # print("S-{}\t{}".format(id_, src_str))
                 result_str += "S-{}\t{}".format(id_, src_str) + '\n'
-
-                # print("W-{}\t{:.3f}\tseconds".format(id_, info["time"]))
                 result_str += "W-{}\t{:.3f}\tseconds".format(id_, info["time"]) + '\n'
-
-                for constraint in info["constraints"]:
-                    # print(
-                    #     "C-{}\t{}".format(
-                    #         id_,
-                    #         self.tgt_dict.string(constraint, self.cfg.common_eval.post_process),
-                    #     )
-                    # )
-                    result_str += "C-{}\t{}".format(
-                            id_,
-                            self.tgt_dict.string(constraint, self.cfg.common_eval.post_process),
-                        ) + '\n'
-
-            # Process top predictions
+                
             for hypo in hypos[: min(len(hypos), nbest)]:
                 hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
                     hypo_tokens=hypo["tokens"].int().cpu(),
@@ -311,32 +296,13 @@ class Transliterator:
                 )
                 detok_hypo_str = self.decode_fn(hypo_str)
                 score = hypo["score"] / math.log(2)  # convert to base 2
-                # original hypothesis (after tokenization and BPE)
-                # print("H-{}\t{}\t{}".format(id_, score, hypo_str))
                 result_str += "H-{}\t{}\t{}".format(id_, score, hypo_str) + '\n'
-
-                # detokenized hypothesis
-                # print("D-{}\t{}\t{}".format(id_, score, detok_hypo_str))
                 result_str += "D-{}\t{}\t{}".format(id_, score, detok_hypo_str) + '\n'
-                
-                # print(
-                #     "P-{}\t{}".format(
-                #         id_,
-                #         " ".join(
-                #             map(
-                #                 lambda x: "{:.4f}".format(x),
-                #                 # convert from base e to base 2
-                #                 hypo["positional_scores"].div_(math.log(2)).tolist(),
-                #             )
-                #         ),
-                #     )
-                # )
                 result_str += "P-{}\t{}".format(
                         id_,
                         " ".join(
                             map(
                                 lambda x: "{:.4f}".format(x),
-                                # convert from base e to base 2
                                 hypo["positional_scores"].div_(math.log(2)).tolist(),
                             )
                         ),
@@ -346,9 +312,7 @@ class Transliterator:
                     alignment_str = " ".join(
                         ["{}-{}".format(src, tgt) for src, tgt in alignment]
                     )
-                    # print("A-{}\t{}".format(id_, alignment_str))
                     result_str += "A-{}\t{}".format(id_, alignment_str) + '\n'
 
-            # # update running id_ counter
-            # start_id += len(inputs)
-        return result_str
+
+        return result_str, attn

@@ -225,77 +225,11 @@ class BaseEngineTransformer(ABC):
 
     def post_process(self, translation_str, tgt_lang):
         lines = translation_str.split('\n')
-
-        list_s = [line for line in lines if 'S-' in line]
-        # list_t = [line for line in lines if 'T-' in line]
         list_h = [line for line in lines if 'H-' in line]
-        # list_d = [line for line in lines if 'D-' in line]
+        val = ''.join(list_h[0].split('\t')[-1].split(' '))
+        return [val]
 
-        list_s.sort(key = lambda x: int(x.split('\t')[0].split('-')[1]) )
-        # list_t.sort(key = lambda x: int(x.split('\t')[0].split('-')[1]) )
-        list_h.sort(key = lambda x: int(x.split('\t')[0].split('-')[1]) )
-        # list_d.sort(key = lambda x: int(x.split('\t')[0].split('-')[1]) )
-
-        res_dict = {}
-        for s in list_s:
-            s_id = int(s.split('\t')[0].split('-')[1])
-            
-            res_dict[s_id] = { 'S' : s.split('\t')[1] }
-            
-            # for t in list_t:
-            #     t_id = int(t.split('\t')[0].split('-')[1])
-            #     if s_id == t_id:
-            #         res_dict[s_id]['T'] = t.split('\t')[1] 
-
-            res_dict[s_id]['H'] = []
-            # res_dict[s_id]['D'] = []
-            
-            for h in list_h:
-                h_id = int(h.split('\t')[0].split('-')[1])
-
-                if s_id == h_id:
-                    res_dict[s_id]['H'].append( ( h.split('\t')[2], pow(2,float(h.split('\t')[1])) ) )
-            
-            # for d in list_d:
-            #     d_id = int(d.split('\t')[0].split('-')[1])
-            
-            #     if s_id == d_id:
-            #         res_dict[s_id]['D'].append( ( d.split('\t')[2], pow(2,float(d.split('\t')[1]))  ) )
-
-        for r in res_dict.keys():
-            res_dict[r]['H'].sort(key = lambda x : float(x[1]) ,reverse =True)
-            # res_dict[r]['D'].sort(key = lambda x : float(x[1]) ,reverse =True)
-        
-
-        # for rescoring 
-        result_dict = {}
-        for i in res_dict.keys():            
-            result_dict[res_dict[i]['S']] = {}
-            for j in range(len(res_dict[i]['H'])):
-                 result_dict[res_dict[i]['S']][res_dict[i]['H'][j][0]] = res_dict[i]['H'][j][1]
-        
-        
-        transliterated_word_list = []
-        if self._rescore:
-            output_dir = self.rescore(res_dict, result_dict, tgt_lang, alpha = 0.9)            
-            for src_word in output_dir.keys():
-                for j in range(len(output_dir[src_word])):
-                    transliterated_word_list.append( output_dir[src_word][j] )
-
-        else:
-            for i in res_dict.keys():
-                # transliterated_word_list.append( res_dict[i]['S'] + '  :  '  + res_dict[i]['H'][0][0] )
-                for j in range(len(res_dict[i]['H'])):
-                    transliterated_word_list.append( res_dict[i]['H'][j][0] )
-
-        # remove extra spaces
-        # transliterated_word_list = [''.join(pair.split(':')[0].split(' ')[1:]) + ' : ' + ''.join(pair.split(':')[1].split(' ')) for pair in transliterated_word_list]
-
-        transliterated_word_list = [''.join(word.split(' ')) for word in transliterated_word_list]
-
-        return transliterated_word_list
-
-    def _transliterate_word(self, text, src_lang, tgt_lang, topk=4, nativize_punctuations=True, nativize_numerals=False):
+    def _transliterate_word(self, text, src_lang, tgt_lang, topk=4, nativize_punctuations=True, nativize_numerals=False, id=None):
         if not text:
             return text
         text = text.lower().strip()
@@ -321,46 +255,22 @@ class BaseEngineTransformer(ABC):
 
         src_word = matches[-1]
         
-        transliteration_list = self.batch_transliterate_words([src_word], src_lang, tgt_lang, topk=topk)[0]
-        
-        if tgt_lang != 'en' or tgt_lang != 'sa':
-            # If users want to avoid yuktAkshara, this is facilitated by allowing them to type subwords inorder to construct a word
-            # For example, "ଜନ୍‍ସନ୍‍ଙ୍କୁ" can be written by "ଜନ୍‍" + "ସନ୍‍" + "କୁ"
-            # Not enabled for Sanskrit, as sandhi compounds are generally written word-by-word
-            for i in range(len(transliteration_list)):
-                transliteration_list[i] = hardfix_wordfinal_virama(transliteration_list[i])
+        transliteration_list, attention = self.batch_transliterate_words([src_word], src_lang, tgt_lang, topk=topk)
+
     
         if src_word == text:
-            return transliteration_list
-
-        return [
+            return transliteration_list[0][0], attention
+        string = [
             rreplace(text, src_word, tgt_word)
             for tgt_word in transliteration_list
-        ]
+        ][0][0]
+        return string, attention
     
     def batch_transliterate_words(self, words, src_lang, tgt_lang, topk=4):
         perprcossed_words = self.pre_process(words, src_lang, tgt_lang)
-        translation_str = self.transliterator.translate(perprcossed_words, nbest=topk)
-        
-        # FIXME: Handle properly in `post_process()` to return results for all words
+        translation_str, attention = self.transliterator.translate(perprcossed_words, nbest=topk)
         transliteration_list = self.post_process(translation_str, tgt_lang)
-        
-        # Lang-specific patches. TODO: Move to indic-nlp-library
-        if tgt_lang == 'mr':
-            for i in range(len(transliteration_list)):
-                transliteration_list[i] = transliteration_list[i].replace("अॅ", 'ॲ')
-        
-        if tgt_lang == 'or':
-            for i in range(len(transliteration_list)):
-                transliteration_list[i] = fix_odia_confusing_ambiguous_yuktakshara(transliteration_list[i])
-        
-        if tgt_lang == 'sa':
-            for i in range(len(transliteration_list)):
-                transliteration_list[i] = explicit_devanagari_wordfinal_schwa_delete(words[0], transliteration_list[i])
-            # Retain only unique, preserving order
-            transliteration_list = list(dict.fromkeys(transliteration_list))
-        
-        return [transliteration_list]
+        return [transliteration_list], attention
 
     def _transliterate_sentence(self, text, src_lang, tgt_lang, nativize_punctuations=True, nativize_numerals=False):
         # TODO: Minimize code redundancy with `_transliterate_word()`
